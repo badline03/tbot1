@@ -1,0 +1,77 @@
+import telebot
+import requests
+import json
+
+TOKEN = "6352850058:AAGJxDjjofgt8lW9knhmtjYPN9b5GdqJtxw"
+API_KEY = "727fe5f3a7417b6f857503de"
+
+bot = telebot.TeleBot(TOKEN)
+
+
+class APIException(Exception):
+    pass
+
+
+class Convertor:
+    @staticmethod
+    def get_price(base, quote, amount):
+        if base == quote:
+            return amount
+
+        url = f"https://api.exchangerate-api.com/v4/latest/{base}"
+        try:
+            response = requests.get(url)
+            data = json.loads(response.text)
+
+            if 'error' in data:
+                raise APIException(data['error'])
+
+            try:
+                price = data['rates'][quote]
+                result = price * amount
+                return f"{amount} {base.upper()} = {result} {quote.upper()}"
+            except KeyError:
+                raise APIException("Неверно указана валюта")
+
+        except requests.exceptions.RequestException:
+            raise APIException("Ошибка при отправке запроса к API")
+
+
+@bot.message_handler(commands=['start', 'help'])
+def start(message):
+    instructions = "Привет! Я бот для конвертации валют.\n"
+    instructions += "Для получения цены на валюту, отправь мне сообщение в формате:\n"
+    instructions += "<имя валюты, цену которой ты хочешь узнать> <имя валюты, в которой надо узнать цену первой валюты> <количество первой валюты>\n"
+    instructions += "Например: доллар евро 100"
+    bot.send_message(message.chat.id, instructions)
+
+
+@bot.message_handler(commands=['values'])
+def values(message):
+    available_currencies = "Доступные валюты:\n"
+    available_currencies += "доллар, евро, рубль"
+    bot.reply_to(message, available_currencies)
+
+
+@bot.message_handler(func=lambda message: True)
+def convert(message):
+    try:
+        values = message.text.split(' ')
+        if len(values) != 3:
+            raise APIException("Неверное количество параметров!")
+
+        base_currency = values[0].lower()
+        quote_currency = values[1].lower()
+        amount = float(values[2])
+
+        result = Convertor.get_price(base_currency, quote_currency, amount)
+        bot.reply_to(message, result)
+
+    except APIException as e:
+        bot.reply_to(message, f"Ошибка: {e}")
+
+    except Exception as e:
+        bot.reply_to(message, f"Произошла неизвестная ошибка: {e}")
+
+
+bot.polling()
